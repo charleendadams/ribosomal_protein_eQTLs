@@ -1,0 +1,299 @@
+---
+title: "Cross-tissue comparison of RPL9 and big-picture visuals"
+#author: "Charleen D. Adams"
+date: "April 29, 2020"
+output: html_document
+fig_width: 6 
+fig_height: 4 
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=12, fig.height=8)
+```
+**Author: Charleen D. Adams**
+
+## Abbreviations and definitions
+ - Gene-Tissue Expression (GTex) Project -- database of tissue-specific gene expression and SNPs associated with gene expression
+ - Ribosomal protein (RP)
+ - expression quantitative trait loci (eQTL) -- SNPs associated with gene expression
+ - significance threshold for analyses here (*Q*-value for 'eGene' status <0.05 & nominal *P*<5x10-6) 
+ - Mendelian randomization (MR)
+
+```{r, include=FALSE}
+setwd('C:/Users/charl/Dropbox/Harvard/ribosomal_proteins/Main_Tables_Paper/v8/GTex_RPL9')
+#devtools::install_github('MRCIEU/TwoSampleMR')
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(CCA)
+library(lme4)
+library(CCP)
+library(qqman)
+library(dplyr)
+library(tidyr)
+library(EnsDb.Hsapiens.v79) 
+library(biomaRt)
+library(SNPlocs.Hsapiens.dbSNP.20120608)
+library(data.table)
+library(DataCombine)
+library(Cairo)
+library(devtools)
+library(RColorBrewer)
+library(MRInstruments) 
+library(TwoSampleMR)
+library(RadialMR)
+library(gplots)
+library(tidyverse)
+library(packcircles)
+library(ggplot2)
+library(viridis)
+library(igraph)
+library(CMplot)
+library(oncofunco)
+library(metaviz)
+```
+
+```{r, warning=FALSE, include=TRUE, message=FALSE}
+## Set up
+## Load the data: merged_EAF contains the eGene signficant eQTLs (Q-value<0.05 & nominal P<5x10-6)
+load("C:/Users/charl/Dropbox/Harvard/ribosomal_proteins/Main_Tables_Paper/v8/V8_masterRP_lists_mergedEAF_matrices.Rdata")
+
+## Select the RPL9 data
+RPL9 <- grepl.sub(data = merged_EAF, pattern = "RPL9", Var = "gene_name")
+```
+
+```{r, echo=FALSE,warning=FALSE, include=FALSE }
+## Format for MR to use the forestplot packag
+exposure_dat <- format_gtex_eqtl(RPL9)
+```
+```{r, warning=FALSE, include=FALSE}
+## Format for MR to use the forestplot packag
+#exposure_dat <- format_gtex_eqtl(RPL9) #this step was run but hidden
+
+## Remove the MRLPs from the expsoure_dat$gene_tissue
+toRemove<-grep("^M", exposure_dat$exposure)
+exposure_dat <- exposure_dat[-toRemove,]
+freq=as.data.frame(table(exposure_dat$exposure))
+dim(freq)
+
+## Special formatting for MR-Base's forestplot: 
+## To plot with MR-Base's forestplot function, I had to hack the colnames: 
+## Typically, it displays SNPs as the rows. But I wanted the tissues to be the rows.
+## So I called the SNP column the tissues.
+
+## MR-Base's forestplot takes the ratio of the outcome and exposure betas, 
+## called a Wald ratio. Since I only need to plot the the GTex data, 
+## I called the GTex beta the 'outcome' beta and the GTex se the 'outcome' se, 
+## then set the exposure beta and exposure se each to 1 so that the calculation of the 
+## Wald ratio would result in GTex data. 
+
+exposure_dat$SNP2=exposure_dat$SNP
+exposure_dat$SNP=exposure_dat$exposure
+exposure_dat$exposure=exposure_dat$SNP2
+
+exposure_dat$outcome="RPL9"
+exposure_dat$id.outcome="RPL9"
+exposure_dat$id.exposure="RPL9"
+
+exposure_dat$beta.outcome=exposure_dat$beta.exposure
+exposure_dat$se.outcome=exposure_dat$se.exposure
+exposure_dat$mr_keep="TRUE"
+exposure_dat$mr_keep=as.factor(exposure_dat$mr_keep)
+levels(exposure_dat$mr_keep) <- c(TRUE)
+exposure_dat$mr_keep <- as.logical(exposure_dat$mr_keep)
+
+exposure_dat$beta.exposure=1
+exposure_dat$se.exposure=1
+
+## Save the exposure dat. It will be needed to find the SNPs later
+#write.csv(exposure_dat, 'RPL9_exposure_dat.csv')
+
+## Don't clump for LD
+#exposure_dat <- clump_data(exposure_dat)
+
+```
+
+```{r, include=FALSE, warning=FALSE}
+singlesnp_results=mr_singlesnp(exposure_dat, parameters = default_parameters(),
+  single_method = "mr_wald_ratio", 
+  all_method = c("mr_ivw"))
+head(singlesnp_results)
+
+singlesnp_results <- singlesnp_results[order(singlesnp_results$SNP),]
+#write.csv(singlesnp_results,'RPL9_all_tissues_results.csv')
+
+## Remove the meta-analyses
+newdata <- singlesnp_results[2:50,]
+
+newdata$exposure='RPL9 eQTL'
+newdata$outcome='RPL9 expression'
+```
+## Forest plot of the cross-tissue effects of eQTLs for RPL9 on RPL9 expression
+All the eQTLs for RPL9 *decreased* expression. 
+
+On this side: the label for the forest plot says "MR", but I could erase that. (It is auto-generated. The forestplot is not displaying MR estimates.) 
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+mr_forest_plot(newdata, exponentiate = FALSE)#600x400(wxh)
+```
+
+
+```{r, warning=FALSE, include=FALSE, message=FALSE, eval=FALSE}
+## Load the data: merged_EAF contains the eGene signficant eQTLs (Q-value<0.05 & nominal P<5x10-6)
+load("C:/Users/charl/Dropbox/Harvard/ribosomal_proteins/Main_Tables_Paper/v8/GTex_RPL9/metaviz_use_completed_merged_EAF.RData")
+
+## Select the RPL9 data
+my_dat_viz <- c('beta', 'se', 'gene_name', 'SNP', 'tissue', 'EAF', 'position')
+forest <- complete.merged_EAF_manhattan[my_dat_viz]
+
+## Select the RPL9 data
+RPL9 <- grepl.sub(data = forest, pattern = "RPL9", Var = "gene_name")
+
+## Remove the MRLPs
+toRemove<-grep("^M", RPL9$gene_name)
+RPL9_clean <- RPL9[-toRemove,]
+freq=as.data.frame(table(RPL9$gene_name))
+
+RPL9_clean <- RPL9_clean[order(RPL9_clean$beta),]
+#write.csv(RPL9_clean, 'RPL9_clean.csv')
+
+## There's a duplicate for Brain_Substantia_nigra (drop)--but 
+RPL9_clean <- RPL9_clean[ which(rownames(RPL9_clean)!="473130"), ]
+
+viz_forest(x = RPL9_clean[1:49, c("beta", "se")], 
+  study_labels = RPL9_clean[1:49, c("tissue")],
+  group=RPL9_clean[1:49, 'SNP'],
+  summary_label = c("Summary (rs1458255)", "Summary (rs2608824)", 
+  "Summary (rs2687958)", "Summary (rs2687967)", "Summary (rs2687969)"), 
+  xlab = "RPL9 cis-eQTL effects across tissues", 
+  variant="thick", annotate_CI=TRUE)
+```
+
+## Scratch that: Better forest plot
+This forest plot is more data-rich. It contains the effect sizes within RPL9 by SNP.
+
+```{r echo=FALSE, out.width="100%", fig.align='center'}
+knitr::include_graphics("C:/Users/charl/Dropbox/Harvard/ribosomal_proteins/Main_Tables_Paper/v8/GTex_RPL9/RPL9_metaviz.png")
+```
+
+## Plan
+As seen in the last forest plot, across the tissues, there were five eQTLs for RPL9:
+
++ rs1458255 (n=7)
++ rs2687967 (n=30)
++ rs2608824  (n=3)
++ rs2687958  (n=5)
++ rs2687969  (n=4)
+
+I had keyed into RPL9 due to the preliminary MR analysis for breast cancer, for which some of these SNPs increased risk. I'll look to see if they increase risk for lung and prostate cancers later. Since rs2687967 is an eQTL in 30 tissues, I'll zoom in on it a bit more, too (later). 
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, include=FALSE}
+## Manhattan plot of all eQTLs
+#The black and grey bands are defaults -- no meaning.
+
+#NOTE: there are more than 1 eQTL for some genes
+
+## Set up the data
+## Fix a spelling error "chromsome" should be "chromosome"
+## Change "chrX" to 23
+colnames(merged_EAF)[2] <- "chromosome"
+table(merged_EAF$chromosome)
+merged_EAF$chromosome=ifelse(merged_EAF$chromosome=="chrX", "chr23", merged_EAF$chromosome)
+table(merged_EAF$chromosome)
+
+## These plots require the chromosome to be a number without text and numberic
+complete.merged_EAF_manhattan=merged_EAF %>%
+  separate(chromosome,
+  into = c("text", "num"),
+  sep = "(?<=[A-Za-z])(?=[0-9])"
+)
+complete.merged_EAF_manhattan$num=as.numeric(complete.merged_EAF_manhattan$num)
+manhattan(complete.merged_EAF_manhattan, chr="num", bp="variant_pos", snp="SNP", p="pval")
+dev.off()
+
+```
+
+```{r, include=FALSE}
+myvars_pretty_plots=c("SNP","num", "variant_pos", "pval")
+pretty_plots=complete.merged_EAF_manhattan[myvars_pretty_plots]
+
+## Circle plot
+CMplot(pretty_plots,type="p",plot.type="c",chr.labels=paste("Chr",c(1:23,"X"),sep=""),r=0.4,cir.legend=TRUE,
+       outward=FALSE,LOG10=TRUE,cir.legend.col="black",cir.chr.h=1.3,chr.den.col="black",file="jpg",
+       memo="circle",dpi=300,file.output=TRUE,verbose=TRUE,width=10,height=10)
+
+## P-value plot
+#CMplot(pretty_plots,type="p",plot.type="m",LOG10=TRUE,threshold=0.0000005,file="jpg",memo="",dpi=300,
+#       file.output=TRUE,verbose=TRUE,width=14,height=6,chr.labels.angle=45)
+
+## SNP effect plot
+CMplot(pretty_plots, plot.type="m", band=0.5, LOG10=FALSE, ylab="SNP effect",threshold=NULL,
+       threshold.lty=2, threshold.lwd=1, threshold.col="red", amplify=TRUE, width=14,height=6,
+       signal.col=NULL, chr.den.col=NULL, file="jpg",memo="effect_sizes",dpi=300,file.output=TRUE,
+       verbose=TRUE,cex=0.8)
+
+#write.csv(complete.merged_EAF_manhattan, 'complete.merged_EAF_manhattan.csv')
+```
+## Shifting gears: comparing breast, lung, and prostate tissue
+This isn't specific to RLP9, but I thought the plot is nice, but RPL9 is on chromosome 4.  
+ 
+```{r, include=FALSE}
+myvars_pretty_plots=c("SNP","num", "variant_pos", "tissue", "pval", "beta", "gene_name")
+pretty_plots=complete.merged_EAF_manhattan[myvars_pretty_plots]
+
+df=pretty_plots
+
+for (i in pretty_plots$tissue){
+  text <- i
+  #text <- paste("P", i, sep ="_")
+  df[[text]] <- ifelse(df$tissue== i, df$pval, 1)
+}
+myvars_pretty_plots2=c("SNP","num", "variant_pos","Breast_Mammary_Tissue", "Lung",
+  'Prostate', 'Ovary')
+df2=df[myvars_pretty_plots2]
+
+colnames(df2)[4]="Breast"
+head(df2)
+SNPs <- list(
+	df2$SNP[df2$Breast<5e-6],
+	df2$SNP[df2$Lung<5e-6],
+	df2$SNP[df2$Prostate<5e-6],
+	df2$SNP[df2$Ovary<5e-6]
+)
+
+CMplot(df2, plot.type="m",multracks=TRUE,threshold=c(1e-6,1e-4),threshold.lty=c(1,2), 
+        threshold.lwd=c(1,1), threshold.col=c("black","grey"), amplify=TRUE,bin.size=1e6,
+        #chr.den.col=c("darkgreen", "yellow", "red"), signal.col=c("red","green","blue"),
+        signal.cex=1, file="jpg",memo="",dpi=300,file.output=TRUE,verbose=TRUE,
+        highlight=SNPs, highlight.text=SNPs, highlight.text.cex=1.4)
+```
+## Breast, lung, prostate, and ovary 
+
+ - light blue = breast
+ - yellow = lung
+ - darker blue/purple = prostate
+ - olive green = ovary
+ 
+ *I can't seem to change the colors.
+```{r echo=FALSE, out.width="100%", fig.align='center'}
+knitr::include_graphics("C:/Users/charl/Dropbox/Harvard/ribosomal_proteins/Main_Tables_Paper/v8/GTex_RPL9/Multraits.Rectangular-Manhattan.Breast.Lung.Prostate.Ovary.jpg")
+```
+
+## Big picture: Effect sizes
+
+I haven't tried to change the colors. 
+```{r echo=FALSE, out.width="100%", fig.align='center'}
+knitr::include_graphics("C:/Users/charl/Dropbox/Harvard/ribosomal_proteins/Main_Tables_Paper/v8/GTex_RPL9/Rectangular-Manhattan.beta_effect_sizes.jpg")
+```
+
+## Big picture: -log10(*P*)-values
+
+```{r echo=FALSE, out.width="100%", fig.align='center'}
+knitr::include_graphics("C:/Users/charl/Dropbox/Harvard/ribosomal_proteins/Main_Tables_Paper/v8/GTex_RPL9/Circular-Manhattan.pval_circle.jpg")
+```
+
+## Github
+
+Copy this link into your browser if *Github* doesn't link: 
+<https://github.com/charleendadams/ribosomal_protein_eQTLs>
